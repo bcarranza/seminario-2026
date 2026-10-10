@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Educación Ambiental — Visor PDF</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: #eef1f5; color: #17212e; }
+    header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px; background: #fff; box-shadow: 0 1px 5px #0002; }
+    header strong { margin-right: 12px; }
+    button, input { border: 1px solid #b8c1cc; border-radius: 6px; padding: 8px; font: inherit; background: white; }
+    button { cursor: pointer; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    input { width: 65px; text-align: center; }
+    main { padding: 20px 10px; text-align: center; }
+    canvas { display: block; margin: 0 auto; background: white; max-width: 100%; box-shadow: 0 3px 16px #0002; }
+    #status { margin: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Educación Ambiental</strong>
+    <button id="prev" aria-label="Página anterior">← Anterior</button>
+    <label>Página <input id="page" type="number" min="1" value="1"> de <span id="total">…</span></label>
+    <button id="next" aria-label="Página siguiente">Siguiente →</button>
+  </header>
+  <main><p id="status">Cargando documento…</p><canvas id="pdfCanvas"></canvas></main>
+  <script type="module">
+    import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    const file = new URL('./Educacio%CC%81n%20Ambiental.pdf', location.href).href;
+    const canvas = document.getElementById('pdfCanvas');
+    const input = document.getElementById('page');
+    const status = document.getElementById('status');
+    let pdf, current = 1, rendering = false, requested = null;
+    const requestedPage = () => Math.max(1, Number(new URLSearchParams(location.hash.slice(1)).get('page')) || 1);
+    async function render(pageNumber) {
+      if (!pdf) return;
+      const page = Math.min(pdf.numPages, Math.max(1, pageNumber));
+      if (rendering) { requested = page; return; }
+      rendering = true; current = page; input.value = page;
+      status.textContent = 'Cargando página ' + page + '…';
+      try {
+        const pdfPage = await pdf.getPage(page);
+        const base = pdfPage.getViewport({ scale: 1 });
+        const available = Math.min(window.innerWidth - 20, 1050);
+        const viewport = pdfPage.getViewport({ scale: Math.min(2, available / base.width) });
+        const ctx = canvas.getContext('2d');
+        canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+        status.textContent = '';
+        document.getElementById('prev').disabled = page === 1;
+        document.getElementById('next').disabled = page === pdf.numPages;
+      } catch (e) { status.textContent = 'No se pudo mostrar la página: ' + e.message; }
+      rendering = false;
+      if (requested !== null) { const next = requested; requested = null; render(next); }
+    }
+    function go(n) { if (pdf) location.hash = 'page=' + Math.min(pdf.numPages, Math.max(1, n)); }
+    document.getElementById('prev').onclick = () => go(current - 1);
+    document.getElementById('next').onclick = () => go(current + 1);
+    input.onchange = () => go(Number(input.value) || 1);
+    input.onkeydown = e => { if (e.key === 'Enter') input.blur(); };
+    window.addEventListener('hashchange', () => render(requestedPage()));
+    try {
+      pdf = await pdfjsLib.getDocument(file).promise;
+      document.getElementById('total').textContent = pdf.numPages;
+      input.max = pdf.numPages;
+      await render(requestedPage());
+    } catch (e) { status.textContent = 'No se pudo cargar el PDF: ' + e.message; }
+  </script>
+</body>
+</html>
